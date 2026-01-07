@@ -3,6 +3,8 @@
 ![Rust](https://img.shields.io/badge/rust-1.75%2B-black?logo=rust)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macos-lightgrey)
+![GhostTunnel Demo](demo.gif)
+
 
 **A fault-tolerant, userspace UDP tunneling protocol optimized for high-latency and lossy network environments.**
 
