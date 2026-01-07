@@ -1,72 +1,36 @@
-# 👻 GhostTunnel (Rusty Low-Bandwidth VPN)
+# ghost-tunnel
 
-![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)
-![Tokio](https://img.shields.io/badge/tokio-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)
-![Systems](https://img.shields.io/badge/systems-engineering-blue)
+![Rust](https://img.shields.io/badge/rust-1.75%2B-black?logo=rust)
+![License](https://img.shields.io/badge/license-MIT-blue)
+![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macos-lightgrey)
 
-> **"Standard VPNs fail on packet loss. GhostTunnel thrives on it."**
+**A fault-tolerant, userspace UDP tunneling protocol optimized for high-latency and lossy network environments.**
 
-## 📖 The Why
-Most VPNs (OpenVPN, WireGuard) are designed for stable, high-bandwidth connections. When packet loss hits 20% or latency spikes, they stall or drop the connection entirely.
+## Motivation
 
-**GhostTunnel** is different. It's built for **hostile networks**:
-- 🛡️ **UDP-only Transport** with custom reliability layer.
-- 📉 **Adaptive Compression** (Zstd) to squeeze data through tiny pipes.
-- 🕵️ **Obfuscation** to look like random noise (anti-DPI).
-- 🖥️ **TUI Dashboard** for real-time monitoring without a browser.
+Traditional VPN protocols (such as OpenVPN over TCP) often suffer from **head-of-line blocking** when packet loss exceeds 5-10%. This results in connection stalls and frequent distinct handshakes, making them unusable on unstable mobile networks (e.g., rural 4G/3G).
 
-## 🚀 Quick Start
+**GhostTunnel** implements a custom reliable-UDP transport layer designed to prioritize connectivity over strict ordering. It decouples congestion control from the tunnel logic, allowing traffic to persist through packet loss rates as high as 30%.
 
-### Option 1: Docker (Recommended)
-No Rust installed? No problem.
-```bash
-docker build -t ghost_tunnel .
-docker run --cap-add=NET_ADMIN --device=/dev/net/tun ghost_tunnel --help
-```
+## Core Capabilities
 
-### Option 2: Cargo (For Hackers)
-```bash
-# Build the project
-make build
+* **Resilient Transport:** UDP-based encapsulation prevents TCP meltdown during network degradation.
+* **Adaptive Compression:** Implements **Zstd** with content-type heuristics. Detects and skips compression for high-entropy payloads (images, encrypted archives) to minimize CPU cycles.
+* **Traffic Obfuscation:** Mitigates Deep Packet Inspection (DPI) by implementing randomized packet sizing and timing jitter (0-15ms) to disrupt traffic analysis signatures.
+* **Headless Monitoring:** Integrated TUI (Terminal User Interface) via `ratatui` for real-time throughput analysis on servers without window managers.
 
-# Run Server (Listen on 0.0.0.0:8000)
-make run-server
+## Architecture
 
-# Run Client (Connect to local server)
-make run-client
-```
-
-## 🏗️ Architecture
+Data flows through a user-space TUN interface, is processed by the optimization pipeline, and transmitted via raw UDP sockets.
 
 ```mermaid
 graph TD
-    subgraph "Host A (Client)"
-        App[Application] --> |IP Packet| TUN[TUN Interface]
-        TUN --> |Raw Bytes| GT_Client[GhostTunnel Process]
-        GT_Client --> |Compress| Zstd[Zstd]
-        Zstd --> |Encrypt| ChaCha[ChaCha20Poly1305]
-        ChaCha --> |Obfuscate| UDP_Out[UDP Socket]
+    subgraph "Client Host"
+        App[Application Traffic] --> |IP Packet| TUN[TUN Interface]
+        TUN --> |Raw Bytes| GT[GhostTunnel Process]
+        GT --> |Optimization| Zstd[Zstd Compression]
+        Zstd --> |Encryption| ChaCha[ChaCha20-Poly1305]
+        ChaCha --> |Obfuscation| UDP[UDP Socket]
     end
 
-    UDP_Out --> |"Random Noise"| Internet((Hostile Internet))
-
-    subgraph "Host B (Server)"
-        Internet --> |Recv| GT_Server[GhostTunnel Process]
-        GT_Server --> |Decrypt| DeChacha[ChaCha20Poly1305]
-        DeChacha --> |Decompress| DeZstd[Zstd]
-        DeZstd --> |Write| TUN_S[TUN Interface]
-        TUN_S --> |IP Packet| Dest[Destination]
-    end
-```
-
-## 🛠️ Features
-- **Chaos Mode**: Simulate partial network failure to test resilience.
-- **TUI Dashboard**: Matrix-style terminal interface.
-- **Zero Config**: Works out of the box with sensible defaults.
-
-## 🧪 Testing Chaos
-Want to see it survive 30% packet loss?
-```bash
-make test-chaos
-```
-*Watch the TUI throughput stay alive while packet loss spikes!*
+    UDP --> |Encrypted Frame| Internet((Public Network))
