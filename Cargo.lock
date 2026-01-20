@@ -490,27 +490,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ghost_tunnel"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bincode",
- "chacha20poly1305",
- "chrono",
- "clap",
- "crossterm",
- "futures",
- "hex",
- "parking_lot",
- "rand",
- "ratatui",
- "serde",
- "tokio",
- "tun",
- "zstd",
-]
-
-[[package]]
 name = "hashbrown"
 version = "0.15.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -866,6 +845,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed2bf2547551a7053d6fdfafda3f938979645c44812fbfcda098faae3f1a362d"
 dependencies = [
  "bitflags",
+]
+
+[[package]]
+name = "resilinet"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "chacha20poly1305",
+ "chrono",
+ "clap",
+ "crossterm",
+ "futures",
+ "hex",
+ "parking_lot",
+ "rand",
+ "ratatui",
+ "serde",
+ "tokio",
+ "tun",
+ "zstd",
 ]
 
 [[package]]

@@ -32,6 +32,7 @@ struct TelemetryState {
     // Quality Metrics
     jitter_ms: f64,
     loss_rate: f64,
+    start_time: Instant,
 }
 
 impl TelemetryState {
@@ -44,6 +45,7 @@ impl TelemetryState {
             total_rx: 0,
             jitter_ms: 12.5,
             loss_rate: 0.01,
+            start_time: Instant::now(),
         }
     }
 
@@ -90,14 +92,14 @@ pub fn spawn_dashboard(rx: mpsc::Receiver<TelemetryUpdate>) -> thread::JoinHandl
 
                 // 1. Status Bar
                 let header = Paragraph::new(format!(
-                    "ResiliNet Edge Gateway v0.2 | UPTIME: {:?} | TX: {} | RX: {} | LOSS: {:.2}% | JITTER: {:.1}ms", 
-                    Duration::from_secs(0), // TODO: Track actual uptime
+                    "RESILINET PROTOCOL (RSOCK-V2) | UPTIME: {:?} | INGRESS: {} | EGRESS: {} | LOSS: {:.2}% | JITTER: {:.1}ms", 
+                    app.start_time.elapsed(),
                     format_bytes(app.total_tx),
                     format_bytes(app.total_rx),
                     app.loss_rate,
                     app.jitter_ms
                 ))
-                .block(Block::default().borders(Borders::ALL).title("SYSTEM TELEMETRY"));
+                .block(Block::default().borders(Borders::ALL).title(" EDGE GATEWAY TELEMETRY "));
                 f.render_widget(header, chunks[0]);
 
                 // 2. Traffic Graphs
@@ -130,7 +132,7 @@ pub fn spawn_dashboard(rx: mpsc::Receiver<TelemetryUpdate>) -> thread::JoinHandl
 
             }).unwrap();
 
-            // Input Handling
+            
             if crossterm::event::poll(Duration::from_millis(0)).unwrap() {
                 if let Event::Key(key) = event::read().unwrap() {
                     match key.code {
@@ -147,7 +149,7 @@ pub fn spawn_dashboard(rx: mpsc::Receiver<TelemetryUpdate>) -> thread::JoinHandl
                         app.total_tx += tx_bytes;
                         app.total_rx += rx_bytes;
                         
-                        // Update current tick bucket
+                       
                         let last_idx = app.tx_history.len() - 1;
                         app.tx_history[last_idx] += tx_bytes;
                         app.rx_history[last_idx] += rx_bytes;
@@ -159,14 +161,14 @@ pub fn spawn_dashboard(rx: mpsc::Receiver<TelemetryUpdate>) -> thread::JoinHandl
                 }
             }
 
-            // Tick
+         
             if last_tick.elapsed() >= tick_rate {
                 app.on_tick();
                 last_tick = Instant::now();
             }
         }
 
-        // Cleanup
+
         disable_raw_mode().unwrap();
         execute!(
             terminal.backend_mut(),
@@ -177,7 +179,7 @@ pub fn spawn_dashboard(rx: mpsc::Receiver<TelemetryUpdate>) -> thread::JoinHandl
     })
 }
 
-// Simple helper for human-readable bytes
+
 fn format_bytes(b: u64) -> String {
     if b < 1024 {
         format!("{} B", b)

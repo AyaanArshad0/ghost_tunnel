@@ -94,7 +94,7 @@ async fn main() -> Result<()> {
         let fake_hello = obfuscation::mimic_tls_client_hello();
         if let Ok(addr) = peer_str.parse::<SocketAddr>() {
              let _ = socket.send_to(&fake_hello, addr).await;
-             let _ = stats_tx.send(TelemetryUpdate::Log("OBSF: Deployed fake TLS ClientHello".to_string()));
+             let _ = stats_tx.send(TelemetryUpdate::Log("OBSF: Injection of Traffic Jitter (Gaussian)".to_string()));
         }
     }
 
