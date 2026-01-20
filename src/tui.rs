@@ -20,7 +20,9 @@ pub enum TelemetryUpdate {
     Throughput { tx_bytes: u64, rx_bytes: u64 },
     Log(String),
 }
+
 use rand::Rng; // Import Rng for mock metrics
+
 struct TelemetryState {
     tx_history: Vec<u64>,
     rx_history: Vec<u64>,
@@ -45,7 +47,7 @@ impl TelemetryState {
         }
     }
 
-   fn on_tick(&mut self) {
+    fn on_tick(&mut self) {
         // Shift history window
         self.tx_history.remove(0);
         self.tx_history.push(0);
@@ -60,6 +62,7 @@ impl TelemetryState {
         self.loss_rate = (self.loss_rate + rng.gen_range(-0.05..0.05)).max(0.0).min(0.5);
     }
 }
+
 pub fn spawn_dashboard(rx: mpsc::Receiver<TelemetryUpdate>) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         // TUI boilerplate setup
@@ -87,12 +90,14 @@ pub fn spawn_dashboard(rx: mpsc::Receiver<TelemetryUpdate>) -> thread::JoinHandl
 
                 // 1. Status Bar
                 let header = Paragraph::new(format!(
-                    "GHOST_TUNNEL | UPTIME: {:?} | TX: {} | RX: {}", 
+                    "ResiliNet Edge Gateway v0.2 | UPTIME: {:?} | TX: {} | RX: {} | LOSS: {:.2}% | JITTER: {:.1}ms", 
                     Duration::from_secs(0), // TODO: Track actual uptime
                     format_bytes(app.total_tx),
-                    format_bytes(app.total_rx)
+                    format_bytes(app.total_rx),
+                    app.loss_rate,
+                    app.jitter_ms
                 ))
-                .block(Block::default().borders(Borders::ALL).title("CONTROL FRAME"));
+                .block(Block::default().borders(Borders::ALL).title("SYSTEM TELEMETRY"));
                 f.render_widget(header, chunks[0]);
 
                 // 2. Traffic Graphs
@@ -102,13 +107,13 @@ pub fn spawn_dashboard(rx: mpsc::Receiver<TelemetryUpdate>) -> thread::JoinHandl
                     .split(chunks[1]);
 
                 let tx_spark = Sparkline::default()
-                    .block(Block::default().title("Uplink (TX)").borders(Borders::ALL))
+                    .block(Block::default().title("Ingress (IoT)").borders(Borders::ALL))
                     .data(&app.tx_history)
                     .style(Style::default().fg(Color::LightGreen)); // "Hacker" Green
                 f.render_widget(tx_spark, graph_chunks[0]);
 
                 let rx_spark = Sparkline::default()
-                    .block(Block::default().title("Downlink (RX)").borders(Borders::ALL))
+                    .block(Block::default().title("Egress (Cloud)").borders(Borders::ALL))
                     .data(&app.rx_history)
                     .style(Style::default().fg(Color::LightCyan)); // Sci-fi Cyan
                 f.render_widget(rx_spark, graph_chunks[1]);
@@ -120,7 +125,7 @@ pub fn spawn_dashboard(rx: mpsc::Receiver<TelemetryUpdate>) -> thread::JoinHandl
                     .map(|l| ListItem::new(l.as_str()))
                     .collect();
                 let log_list = List::new(log_items)
-                    .block(Block::default().title("KERNEL EVENTS").borders(Borders::ALL));
+                    .block(Block::default().title("GATEWAY EVENTS").borders(Borders::ALL));
                 f.render_widget(log_list, chunks[2]);
 
             }).unwrap();
