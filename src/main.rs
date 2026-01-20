@@ -67,7 +67,7 @@ async fn main() -> Result<()> {
     
     // We share the cipher primitive across threads. 
     // Arc<T> is cheap here, and ChaCha state is immutable until encryption.
-    let cipher_enc = Arc::new(crypto::CryptoCipher::new(&key_arr));
+    let cipher_enc = Arc::new(crypto::SessionGuard::new(&key_arr));
     let cipher_dec = cipher_enc.clone();
 
     // TUN Interface Setup
