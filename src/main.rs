@@ -288,7 +288,7 @@ async fn main() -> Result<()> {
         }
     });
 
-   
+
     let _ = tui_handle.join();
     Ok(())
 }
