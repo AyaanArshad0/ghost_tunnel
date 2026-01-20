@@ -27,6 +27,9 @@ struct TelemetryState {
     logs: Vec<String>,
     total_tx: u64,
     total_rx: u64,
+    // Quality Metrics
+    jitter_ms: f64,
+    loss_rate: f64,
 }
 
 impl TelemetryState {
@@ -37,6 +40,8 @@ impl TelemetryState {
             logs: vec![],
             total_tx: 0,
             total_rx: 0,
+            jitter_ms: 12.5,
+            loss_rate: 0.01,
         }
     }
 
