@@ -20,7 +20,7 @@ pub enum TelemetryUpdate {
     Throughput { tx_bytes: u64, rx_bytes: u64 },
     Log(String),
 }
-
+use rand::Rng; // Import Rng for mock metrics
 struct TelemetryState {
     tx_history: Vec<u64>,
     rx_history: Vec<u64>,
