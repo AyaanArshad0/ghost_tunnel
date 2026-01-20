@@ -2,8 +2,10 @@ use clap::Parser;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::collections::HashMap;
 use anyhow::{Context, Result};
 use tokio::net::UdpSocket;
+use tokio::time::{Instant, sleep, Duration};
 use tun::Configuration;
 use parking_lot::Mutex;
 use std::sync::mpsc; // Sync channel for TUI interaction
@@ -18,11 +20,18 @@ mod obfuscation;
 use protocol::{WireFrame, FrameType};
 use tui::TelemetryUpdate;
 use tokio::io::{AsyncReadExt, AsyncWriteExt}; 
-use tokio::time::{sleep, Duration}; 
 
 /// The maximum transmission unit.
 /// TODO: Implement Path MTU Discovery (PMTUD) instead of hardcoding.
 const MTU: usize = 1280;
+
+/// Max packets in flight (Sliding Window).
+const WINDOW_SIZE: usize = 50;
+/// Retransmission Timeout.
+const RTO: Duration = Duration::from_millis(200);
+
+// Map<Seq, (SendTime, EncodedFrame)>
+type PendingPackets = Arc<Mutex<HashMap<u64, (Instant, Vec<u8>)>>>;
 
 #[derive(Parser, Debug, Clone)]
 #[command(author, version, about)]
@@ -95,6 +104,55 @@ async fn main() -> Result<()> {
     // Sequence number for basic replay protection (monotonic counter)
     let tx_seq = Arc::new(AtomicU64::new(1));
 
+    // Shared state for ARQ (Automatic Repeat Request)
+    let pending_packets: PendingPackets = Arc::new(Mutex::new(HashMap::new()));
+
+    // ----------------------------------------------------------------
+    // RETRANSMISSION TASK
+    // Resends dropped packets if RTO is exceeded.
+    // ----------------------------------------------------------------
+    let rtx_socket = socket.clone();
+    let rtx_peer = active_peer.clone();
+    let rtx_pending = pending_packets.clone();
+    let rtx_stats = stats_tx.clone();
+
+    tokio::spawn(async move {
+        loop {
+            sleep(Duration::from_millis(10)).await; // Check every 10ms
+
+            let now = Instant::now();
+            let mut retransmits = Vec::new();
+
+            // Scope for lock
+            {
+                let lock = rtx_pending.lock();
+                for (seq, (sent_time, data)) in lock.iter() {
+                    if now.duration_since(*sent_time) > RTO {
+                        retransmits.push((*seq, data.clone()));
+                    }
+                }
+            }
+
+            if !retransmits.is_empty() {
+                let target = *rtx_peer.lock();
+                if let Some(remote_addr) = target {
+                    for (seq, data) in retransmits {
+                        // TODO: Implement exponential backoff for RTO
+                        if let Err(e) = rtx_socket.send_to(&data, remote_addr).await {
+                             let _ = rtx_stats.send(TelemetryUpdate::Log(format!("RTX::Err: {}", e)));
+                        } else {
+                             // Update timestamp (reset RTO)
+                             let mut lock = rtx_pending.lock();
+                             if let Some(entry) = lock.get_mut(&seq) {
+                                 entry.0 = Instant::now();
+                             }
+                        }
+                    }
+                }
+            }
+        }
+    });
+
     // ----------------------------------------------------------------
     // TX LOOP: TUN Interface -> UDP Socket
     // Reads IP packets, compresses, encrypts, and blasts them over UDP.
@@ -102,10 +160,22 @@ async fn main() -> Result<()> {
     let socket_tx = socket.clone();
     let peer_tx = active_peer.clone();
     let stats_tx_1 = stats_tx.clone();
+    let pending_tx = pending_packets.clone();
     
     let _tx_task = tokio::spawn(async move {
         let mut frame_buffer = [0u8; 4096]; // Oversized buffer for safety
         loop {
+            // Flow Control: Don't read from TUN if window is full
+            let is_full = {
+                 let lock = pending_tx.lock();
+                 lock.len() >= WINDOW_SIZE
+            };
+
+            if is_full {
+                 sleep(Duration::from_millis(1)).await;
+                 continue;
+            }
+
             match tun_reader.read(&mut frame_buffer).await {
                 Ok(n) if n > 0 => {
                     let target = *peer_tx.lock();
@@ -124,6 +194,12 @@ async fn main() -> Result<()> {
                         
                         // Serialization (Bincode is fast, but we might want Protobuf later for schema evolution)
                         let encoded = bincode::serialize(&frame).unwrap();
+
+                        // Buffer for reliability
+                        {
+                            let mut lock = pending_tx.lock();
+                            lock.insert(seq, (Instant::now(), encoded.clone()));
+                        }
 
                         if let Err(e) = socket_tx.send_to(&encoded, remote_addr).await {
                              let _ = stats_tx_1.send(TelemetryUpdate::Log(format!("UDP::SendErr: {}", e)));
@@ -153,6 +229,7 @@ async fn main() -> Result<()> {
     let socket_rx = socket.clone();
     let peer_rx = active_peer.clone();
     let stats_tx_2 = stats_tx.clone();
+    let pending_rx = pending_packets.clone();
 
     let _rx_task = tokio::spawn(async move {
         let mut udp_buffer = [0u8; 65535]; // Max UDP size
@@ -173,6 +250,12 @@ async fn main() -> Result<()> {
                     if let Ok(frame) = bincode::deserialize::<WireFrame>(&udp_buffer[..size]) {
                         match frame.header.frame_type {
                             FrameType::Transport => {
+                                // 1. Send ACK immediately
+                                let ack_frame = WireFrame::new_ack(0, frame.header.seq);
+                                if let Ok(ack_bytes) = bincode::serialize(&ack_frame) {
+                                    let _ = socket_rx.send_to(&ack_bytes, src_addr).await;
+                                }
+
                                 if let Ok(decrypted) = cipher_dec.decrypt(&frame.payload) {
                                     // If decryption passes, we trust the logic (Authenticated Encryption)
                                     if let Ok(decompressed) = compression::adaptive_decompress(&decrypted) {
@@ -185,6 +268,13 @@ async fn main() -> Result<()> {
                                     }
                                 }
                                 // Note: Silently drop decryption failures (prevent oracle attacks)
+                            },
+                            FrameType::Ack => {
+                                // Process ACK: Remove from buffer
+                                let mut lock = pending_rx.lock();
+                                if lock.remove(&frame.header.ack_num).is_some() {
+                                    // Consider logging RTT here if debugging
+                                }
                             },
                             _ => {} // Ignore heartbeats/handshakes for now
                         }

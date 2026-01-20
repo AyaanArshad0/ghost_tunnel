@@ -9,6 +9,8 @@ pub enum FrameType {
     Heartbeat,
     /// Fake Handshake (Obfuscation) to look like TLS.
     Handshake,
+    /// Reliability Acknowledgment.
+    Ack,
 }
 
 /// The headers for our Ghost Protocol (Wire Format).
@@ -20,6 +22,10 @@ pub struct FrameHeader {
     /// 2. Basic replay protection.
     /// 3. Jitter calcluation (diff between send/recv times).
     pub seq: u64,
+    /// The sequence number this frame acknowledges.
+    /// For Data frames, this piggybacks the last seen seq (optional opt).
+    /// For Ack frames, this is the payload.
+    pub ack_num: u64,
     /// The type of payload.
     pub frame_type: FrameType,
 }
@@ -39,9 +45,22 @@ impl WireFrame {
         Self {
             header: FrameHeader {
                 seq,
+                ack_num: 0, // Piggybacking not implemented yet
                 frame_type: FrameType::Transport,
             },
             payload,
+        }
+    }
+
+    /// Create an ACK frame.
+    pub fn new_ack(seq: u64, ack_num: u64) -> Self {
+        Self {
+            header: FrameHeader {
+                seq,
+                ack_num,
+                frame_type: FrameType::Ack,
+            },
+            payload: vec![],
         }
     }
 
@@ -50,6 +69,7 @@ impl WireFrame {
         Self {
             header: FrameHeader {
                 seq,
+                ack_num: 0,
                 frame_type: FrameType::Heartbeat,
             },
             payload: vec![],
