@@ -45,15 +45,21 @@ impl TelemetryState {
         }
     }
 
-    fn on_tick(&mut self) {
+   fn on_tick(&mut self) {
         // Shift history window
         self.tx_history.remove(0);
         self.tx_history.push(0);
         self.rx_history.remove(0);
         self.rx_history.push(0);
+
+        // Simulate network fluctuations
+        let mut rng = rand::thread_rng();
+        // Jitter wanders between 5ms and 25ms
+        self.jitter_ms = (self.jitter_ms + rng.gen_range(-2.0..2.0)).max(5.0).min(25.0);
+        // Loss rate wanders between 0.00% and 0.50%
+        self.loss_rate = (self.loss_rate + rng.gen_range(-0.05..0.05)).max(0.0).min(0.5);
     }
 }
-
 pub fn spawn_dashboard(rx: mpsc::Receiver<TelemetryUpdate>) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         // TUI boilerplate setup
